@@ -1,3 +1,4 @@
+#Loading train data and val data
 from torch.autograd import Variable
 import numpy as np
 import torchvision.transforms as transforms
