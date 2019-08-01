@@ -1,3 +1,5 @@
+# Testing and visualisation left
+
 from Trainer import Trainer
 from config import get_config
 from data import train_val_data
