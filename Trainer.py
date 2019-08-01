@@ -1,3 +1,4 @@
+#Functions and classes included are "Trainer" which includes the process of backpropagation
 from __future__ import print_function
 import torch
 import torch.nn as nn
