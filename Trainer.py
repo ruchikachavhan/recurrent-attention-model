@@ -1,4 +1,3 @@
-#Functions and classes included are "Trainer" which includes the process of backpropagation
 from __future__ import print_function
 import torch
 import torch.nn as nn
@@ -17,6 +16,23 @@ import imageio
 import matplotlib
 import matplotlib.pyplot as plt
 
+def denormalize(location, dim):
+	x = (location[0]+1)*dim*0.5
+	y = (location[1]+1)*dim*0.5
+	loc = torch.tensor([x,y])
+	return loc
+
+def give_images(image, l_t, window_size):
+	scenes = []
+	for b in range(0, image.shape[0]):
+		save_image = torch.reshape(image[b].detach(), (28,28,1)).numpy()
+		save_image = save_image *255
+		img = cv2.cvtColor(save_image, cv2.COLOR_GRAY2RGB)
+		l_t[b] = denormalize(l_t[b], 28)
+		cv2.rectangle(img,(l_t[b][0], l_t[b][1]), (l_t[b][0]+ window_size, l_t[b][1]+window_size), (0,255,0),1)
+		scenes.append(img)
+	return scenes
+
 def one_hot(num_classes, labels):
 	out = torch.zeros((labels.shape[0], 1, num_classes))
 	for i in range(0, labels.shape[0]):
@@ -27,6 +43,7 @@ class Trainer(object):
 		self.config = config
 		self.window_size = config.window_size
 		self. num_glimpses = config.num_glimpses
+		self.num_patches = config.num_patches
 		self.h_image = config.h_image
 		self.h_loc = config.h_loc 
 		self.h_hidden = config.h_hidden
@@ -51,52 +68,46 @@ class Trainer(object):
 		loss_epoch = 0
 		loss_list = []
 		for iter, (image, label) in  enumerate(self.data):
-			self.optimizer.zero_grad()
-			locs = []
-			log_pi = []
-			baselines = []
 			h_t, l_t = self.reset()
+			log_probas = 0
 			y = one_hot(self.num_classes, label).long()
 			scenes = []
-			h_t, l_t, b_t, log_probas, p = self.RAMmodel.forward(image, l_t	, h_t, last=True)
-			
-			log_pi.append(p)
-			baselines.append(b_t)
-			locs.append(l_t)
+			for num in range(0, self.num_patches):
+				locs = []
+				log_pi = []
+				baselines = []
+				h_t, l_t, b_t, log_probas, p = self.RAMmodel.forward(image.detach(), l_t.detach(), h_t.detach(), last=True)
+				log_pi.append(p)
+				baselines.append(b_t)
+				locs.append(l_t)
+				# convert list to tensors and reshape
+				baselines = torch.stack(baselines)
+				log_pi_ = torch.stack(log_pi)
+				# calculate reward
+				predicted = torch.max(log_probas, 1)[1]
+				R = (predicted.detach() == label).float()
+				
 
-			# convert list to tensors and reshape
-			baselines = torch.stack(baselines)
-			log_pi = torch.stack(log_pi)
-			# calculate reward
-			predicted = torch.max(log_probas, 1)[1]
-			R = (predicted.detach() == label).float()
-			# R = R.unsqueeze().repeat(0, 3)
-			reward = torch.zeros((baselines.shape[0], baselines.shape[1]))
-			for r in range(0, reward.shape[0]):
-				for r_ in range(0, reward.shape[1]):
-					reward[r][r_] = R[r_]
+				loss_action = F.nll_loss(log_probas,label)
+				loss_baseline = F.mse_loss(baselines, R)
 
-			loss_action = F.nll_loss(log_probas,label)
-			loss_baseline = F.mse_loss(baselines, reward)
+				# compute reinforce loss
+				# summed over timesteps and averaged across batch
+				adjusted_reward = R - baselines.detach()
+				loss_reinforce = torch.sum(-log_pi_*adjusted_reward, dim=1)
+				loss_reinforce = torch.mean(loss_reinforce, dim=0)
 
-			# compute reinforce loss
-			# summed over timesteps and averaged across batch
-			adjusted_reward = R - baselines.detach()
-			loss_reinforce = torch.sum(-log_pi*adjusted_reward, dim=1)
-			loss_reinforce = torch.mean(loss_reinforce, dim=0)
+				# sum up into a hybrid loss
+				loss = loss_action + loss_baseline + loss_reinforce
 
-			# sum up into a hybrid loss
-			loss = loss_action + loss_baseline + loss_reinforce
-			loss_list.append(loss)
-			loss_epoch+=loss
-			plt.ion()
-			plt.figure(200)
-			plt.plot(loss_list)
-			plt.savefig('plot'+str(epoch)+'.png')
-			plt.pause(0.05)
-			loss.backward()
-			self.optimizer.step()
-		# imageio.mimsave("vid.gif", scenes)
+				print("LOSS", loss)
+				loss.backward()
+				self.optimizer.step()
+				result_images = give_images(image, l_t, self.window_size)
+				for rr in range(0, len(result_images)):
+					scenes.append(result_images[rr])
+			name = "vid"+ str(epoch) + "_" + str(iter)+ ".gif"
+			imageio.mimsave(name, scenes)
 		return loss_epoch/(iter+1)
 	def train(self):
 		for epoch in range(0, self.epochs):
