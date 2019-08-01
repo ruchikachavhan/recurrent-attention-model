@@ -1,3 +1,5 @@
+#contains parameters of networks and training
+
 import argparse
 
 
