@@ -9,7 +9,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-#The network will always return points in the image as tanh function will be applied
+#The network will always return points in the image as tanh function will be applied, hence denormalize
 def denormalize(location, dim):
 	x = (location[0]+1)*dim*0.5
 	y = (location[1]+1)*dim*0.5
