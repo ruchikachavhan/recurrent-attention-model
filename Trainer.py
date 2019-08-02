@@ -80,24 +80,21 @@ class Trainer(object):
 				log_pi.append(p)
 				baselines.append(b_t)
 				locs.append(l_t)
-				# convert list to tensors and reshape
+	
+	
 				baselines = torch.stack(baselines)
 				log_pi_ = torch.stack(log_pi)
-				# calculate reward
+				
 				predicted = torch.max(log_probas, 1)[1]
 				R = (predicted.detach() == label).float()
 				
 
 				loss_action = F.nll_loss(log_probas,label)
 				loss_baseline = F.mse_loss(baselines, R)
-
-				# compute reinforce loss
-				# summed over timesteps and averaged across batch
 				adjusted_reward = R - baselines.detach()
 				loss_reinforce = torch.sum(-log_pi_*adjusted_reward, dim=1)
 				loss_reinforce = torch.mean(loss_reinforce, dim=0)
 
-				# sum up into a hybrid loss
 				loss = loss_action + loss_baseline + loss_reinforce
 
 				print("LOSS", loss)
